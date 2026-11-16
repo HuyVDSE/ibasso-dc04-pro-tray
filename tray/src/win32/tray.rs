@@ -168,10 +168,13 @@ impl Tray {
         let startup = startup::Startup::current_exe()
             .and_then(|setting| setting.state().map(|state| (setting, state)));
         let hid_error = app.worker.last_error();
+        let version = wide(concat!("iBasso DC04 Pro Tray v", env!("CARGO_PKG_VERSION")));
         unsafe {
             let Ok(menu) = CreatePopupMenu() else {
                 return;
             };
+            let _ = AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, PCWSTR(version.as_ptr()));
+            let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
             let _ = AppendMenuW(menu, MF_STRING, RESCAN, w!("Đọc lại DAC"));
             if hid_error.is_some() {
                 let _ = AppendMenuW(menu, MF_STRING, HID_ERROR, w!("Chi tiết lỗi DAC"));

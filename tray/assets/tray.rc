@@ -1,2 +1,27 @@
+#include "app_version.h"
+
 1 ICON "tray.ico"
 1 24 "tray.manifest"
+
+1 VERSIONINFO
+FILEVERSION APP_VERSION_NUMERIC
+PRODUCTVERSION APP_VERSION_NUMERIC
+FILEOS 0x00040004L
+FILETYPE 0x00000001L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "FileDescription", "iBasso DC04 Pro Tray"
+            VALUE "FileVersion", APP_VERSION_TEXT
+            VALUE "OriginalFilename", "dc04-tray.exe"
+            VALUE "ProductName", "iBasso DC04 Pro Tray"
+            VALUE "ProductVersion", APP_VERSION_TEXT
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END

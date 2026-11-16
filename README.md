@@ -12,6 +12,8 @@ Tested on **Windows 11 x64** with a **DC04 Pro running FPGA version 1.58**. See 
 
 If you move the executable after enabling startup, run it from its new location and select **Khởi động cùng Windows (cập nhật đường dẫn)** (Start with Windows, update path). If the DAC fails to connect, **Chi tiết lỗi DAC** (DAC error details) shows the most recent error.
 
+The app version appears at the top of the tray menu and in **Properties → Details** for `dc04-tray.exe`. Run `dc04-cli --version` to check the CLI version.
+
 ## Build from source
 
 Install stable Rust with the `x86_64-pc-windows-msvc` target and **Visual Studio Build Tools** with the C++ toolchain and Windows SDK. Run these commands in PowerShell from the repository root so Cargo picks up the static runtime settings in `.cargo/config.toml`.
@@ -26,6 +28,8 @@ Run the Rust test suite with:
 ```powershell
 cargo test --locked --target x86_64-pc-windows-msvc --manifest-path tray/Cargo.toml
 ```
+
+For each release, bump `version` in `tray/Cargo.toml`, run `cargo check --manifest-path tray/Cargo.toml` to refresh `tray/Cargo.lock`, and rebuild. Tag the release commit with the same version, for example `v0.1.1`, so a version reported from the tray can be traced back to its source.
 
 ## Check the device with the CLI
 

@@ -8,7 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-const USAGE: &str = "Usage: dc04-cli <list | get [--raw] | volume-down [--unplug-test] | volume-set <1..99> | bench-edge <0|1|100>>\nbench-edge is for hardware tests only. Stop playback and unplug headphones first.";
+const USAGE: &str = "Usage: dc04-cli <list | get [--raw] | volume-down [--unplug-test] | volume-set <1..99> | bench-edge <0|1|100> | --version>\nbench-edge is for hardware tests only. Stop playback and unplug headphones first.";
 
 enum Command {
     List,
@@ -81,6 +81,10 @@ fn run(command: Command) -> Result<(), Box<dyn Error>> {
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);
     let command = match (args.next().as_deref(), args.next().as_deref(), args.next()) {
+        (Some("-V" | "--version"), None, None) => {
+            println!(concat!("dc04-cli ", env!("CARGO_PKG_VERSION")));
+            return ExitCode::SUCCESS;
+        }
         (Some("-h" | "--help"), None, None) => {
             println!("{USAGE}");
             return ExitCode::SUCCESS;
