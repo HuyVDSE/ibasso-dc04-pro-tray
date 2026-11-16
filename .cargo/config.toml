@@ -1,0 +1,3 @@
+[target.x86_64-pc-windows-msvc]
+# Keep the VC runtime in the executable so the portable build needs no redist installer.
+rustflags = ["-C", "target-feature=+crt-static"]

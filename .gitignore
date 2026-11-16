@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+target/
+/dist/
+/Portable Test A/
+/Portable Test B/
+/local-server*.log
+/local-server.pid
+/research/dc04pro-startup-before-*.clixml
+
+# iBasso frontend copies. Regenerate local-web with mirror_ibasso.py.
+/local-web/
+/research/ibasso-web-index.js
