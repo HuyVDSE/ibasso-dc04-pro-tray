@@ -69,7 +69,7 @@ impl Startup {
         if self.command.len() > MAX_COMMAND + 1 {
             return Err(Error::new(
                 E_INVALIDARG,
-                "Đường dẫn quá dài để đăng ký. Hãy chuyển app sang thư mục có đường dẫn ngắn hơn.",
+                "The path is too long to register for startup. Move the app to a folder with a shorter path.",
             ));
         }
         let mut key = Key(HKEY::default());

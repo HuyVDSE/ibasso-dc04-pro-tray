@@ -8,9 +8,9 @@ Tested on **Windows 11 x64** with a **DC04 Pro running FPGA version 1.58**. See 
 
 1. Connect the DC04 Pro over USB and run `dc04-tray.exe` without administrator privileges.
 2. Left-click the headphones icon in the system tray to view or adjust the volume. If the icon is hidden, click the **^** arrow to show hidden icons.
-3. Right-click the icon to open the menu. Select **Khởi động cùng Windows** (Start with Windows) to launch the app automatically when you sign in.
+3. Right-click the icon to open the menu. Select **Start with Windows** to launch the app automatically when you sign in.
 
-If you move the executable after enabling startup, run it from its new location and select **Khởi động cùng Windows (cập nhật đường dẫn)** (Start with Windows, update path). If the DAC fails to connect, **Chi tiết lỗi DAC** (DAC error details) shows the most recent error.
+If you move the executable after enabling startup, run it from its new location and select **Start with Windows (update path)**. If the DAC fails to connect, **DAC Error Details** shows the most recent error.
 
 The app version appears at the top of the tray menu and in **Properties → Details** for `dc04-tray.exe`. Run `dc04-cli --version` to check the CLI version.
 

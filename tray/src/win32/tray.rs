@@ -57,17 +57,17 @@ impl Tray {
                 if reading.adjustable() {
                     ""
                 } else {
-                    " · Khóa chỉnh"
+                    " · Volume locked"
                 }
             ),
             status => format!(
                 "iBasso DC04 Pro · {}",
                 match status {
-                    Status::Offline => "Chưa cắm DAC",
-                    Status::Multiple => "Chỉ cắm một DAC",
-                    Status::Unavailable => "Không đọc được DAC",
-                    Status::Sync => "Cần đồng bộ",
-                    _ => "Đang đọc…",
+                    Status::Offline => "DAC disconnected",
+                    Status::Multiple => "Connect only one DAC",
+                    Status::Unavailable => "Unable to read DAC",
+                    Status::Sync => "Sync needed",
+                    _ => "Reading…",
                 }
             ),
         };
@@ -175,20 +175,19 @@ impl Tray {
             };
             let _ = AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, PCWSTR(version.as_ptr()));
             let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
-            let _ = AppendMenuW(menu, MF_STRING, RESCAN, w!("Đọc lại DAC"));
+            let _ = AppendMenuW(menu, MF_STRING, RESCAN, w!("Rescan DAC"));
             if hid_error.is_some() {
-                let _ = AppendMenuW(menu, MF_STRING, HID_ERROR, w!("Chi tiết lỗi DAC"));
+                let _ = AppendMenuW(menu, MF_STRING, HID_ERROR, w!("DAC Error Details"));
             }
             let (flag, label) = match &startup {
-                Ok((_, startup::State::Current)) => (MF_CHECKED, w!("Khởi động cùng Windows")),
-                Ok((_, startup::State::Other)) => (
-                    MF_UNCHECKED,
-                    w!("Khởi động cùng Windows (cập nhật đường dẫn)"),
-                ),
-                Ok((_, startup::State::Off)) => (MF_UNCHECKED, w!("Khởi động cùng Windows")),
+                Ok((_, startup::State::Current)) => (MF_CHECKED, w!("Start with Windows")),
+                Ok((_, startup::State::Other)) => {
+                    (MF_UNCHECKED, w!("Start with Windows (update path)"))
+                }
+                Ok((_, startup::State::Off)) => (MF_UNCHECKED, w!("Start with Windows")),
                 Err(_) => (
                     MF_UNCHECKED,
-                    w!("Khởi động cùng Windows (lỗi đọc cấu hình)"),
+                    w!("Start with Windows (settings unavailable)"),
                 ),
             };
             let _ = AppendMenuW(menu, MF_STRING | flag, STARTUP, label);
@@ -197,10 +196,10 @@ impl Tray {
                     menu,
                     MF_STRING,
                     REMOVE_OLD_STARTUP,
-                    w!("Gỡ đăng ký đường dẫn cũ"),
+                    w!("Remove old startup entry"),
                 );
             }
-            let _ = AppendMenuW(menu, MF_STRING, EXIT, w!("Thoát"));
+            let _ = AppendMenuW(menu, MF_STRING, EXIT, w!("Exit"));
             let _ = SetForegroundWindow(self.hwnd);
             let selected = TrackPopupMenu(
                 menu,
@@ -223,7 +222,7 @@ impl Tray {
                         MessageBoxW(
                             Some(self.hwnd),
                             PCWSTR(body.as_ptr()),
-                            w!("Chi tiết lỗi DAC"),
+                            w!("DAC Error Details"),
                             MB_OK | MB_ICONWARNING,
                         );
                     }
@@ -238,7 +237,7 @@ impl Tray {
                     });
                     if let Err(error) = result {
                         show_error(&format!(
-                            "Không cập nhật được tùy chọn khởi động cùng Windows.\n{error}"
+                            "Could not update the Windows startup setting.\n{error}"
                         ));
                     }
                 }

@@ -73,10 +73,10 @@ impl Popup {
             status: child(w!("STATIC"), w!(""), SS_ENDELLIPSIS)?,
             value: child(w!("STATIC"), w!("— / 100"), SS_RIGHT)?,
             // The static immediately before the trackbar supplies its accessible name.
-            volume: child(w!("STATIC"), w!("Âm lượng DAC"), WINDOW_STYLE(0))?,
+            volume: child(w!("STATIC"), w!("DAC Volume"), WINDOW_STYLE(0))?,
             slider: child(
                 TRACKBAR_CLASSW,
-                w!("Âm lượng DAC"),
+                w!("DAC Volume"),
                 WS_TABSTOP | WINDOW_STYLE(TBS_NOTICKS),
             )?,
             background: unsafe { CreateSolidBrush(BACKGROUND) },
@@ -363,20 +363,20 @@ impl Popup {
             }
         }
         let (status, confirmed) = match snapshot.status {
-            Status::Reading => ("Đang đọc âm lượng…", None),
-            Status::Offline => ("Chưa cắm DAC", None),
-            Status::Multiple => ("Chỉ cắm một DC04 Pro", None),
-            Status::Unavailable => ("Không đọc được DAC · Đang thử lại", None),
-            Status::Sync => ("Cần đồng bộ · Đang đọc lại DAC…", None),
+            Status::Reading => ("Reading volume…", None),
+            Status::Offline => ("DAC disconnected", None),
+            Status::Multiple => ("Connect only one DC04 Pro", None),
+            Status::Unavailable => ("Unable to read DAC · Retrying", None),
+            Status::Sync => ("Sync needed · Reading DAC again…", None),
             Status::Read(reading) => {
                 let status = if !reading.centered() {
-                    "Chưa xác nhận balance giữa"
+                    "Center balance unconfirmed"
                 } else if !reading.adjustable() {
-                    "Mức biên chưa được kiểm chứng"
+                    "Volume limit unverified"
                 } else if snapshot.requested.is_some() {
-                    "Đang chỉnh âm lượng…"
+                    "Adjusting volume…"
                 } else {
-                    "Đã kết nối qua USB"
+                    "Connected via USB"
                 };
                 (status, Some(reading.step()))
             }
