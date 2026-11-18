@@ -1,3 +1,5 @@
+use super::GainLevel;
+
 pub(super) const FPGA_COMMAND: u8 = 0x58;
 pub(super) const VOLUME_COMMAND: u8 = 0x41;
 pub(super) const VOLUME_REGISTERS: [u8; 2] = [0x10, 0x11];
@@ -93,6 +95,18 @@ pub(super) fn volume_writes([left, right]: [u8; 2]) -> [[u8; 17]; 10] {
     ]
 }
 
+pub(super) fn gain_writes(level: GainLevel) -> [[u8; 17]; 2] {
+    let code = match level {
+        GainLevel::Low => 0x00,
+        GainLevel::Mid => 0x20,
+        GainLevel::High => 0x31,
+    };
+    [
+        dac_write(0x15, 0x60, 0x08, 0, code),
+        dac_write(0x16, 0x62, 0x08, 0, code),
+    ]
+}
+
 fn dac_write(command: u8, address: u8, register: u8, channel: u8, code: u8) -> [u8; 17] {
     [
         0, command, 0x11, 0x88, address, 0, 0, 5, register, 0, channel, 0, code, 0, 0, 0, 0,
@@ -108,6 +122,28 @@ fn store_write(command: u8, register: u8, code: u8) -> [u8; 17] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn builds_both_gain_reports_in_vendor_order() {
+        for (level, code) in [
+            (GainLevel::Low, 0x00),
+            (GainLevel::Mid, 0x20),
+            (GainLevel::High, 0x31),
+        ] {
+            assert_eq!(
+                gain_writes(level),
+                [
+                    [
+                        0, 0x15, 0x11, 0x88, 0x60, 0, 0, 5, 8, 0, 0, 0, code, 0, 0, 0, 0
+                    ],
+                    [
+                        0, 0x16, 0x11, 0x88, 0x62, 0, 0, 5, 8, 0, 0, 0, code, 0, 0, 0, 0
+                    ],
+                ],
+                "{level}"
+            );
+        }
+    }
 
     #[test]
     fn decodes_the_captured_volume_reply() {

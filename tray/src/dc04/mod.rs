@@ -8,6 +8,24 @@ pub use hid::collections;
 
 pub struct Device {
     handle: HidDevice,
+    trace: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GainLevel {
+    Low,
+    Mid,
+    High,
+}
+
+impl fmt::Display for GainLevel {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Low => "low",
+            Self::Mid => "mid",
+            Self::High => "high",
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -76,12 +94,24 @@ impl Device {
                 operation: "opening the DC04 Pro HID collection",
                 source,
             })?,
+            trace: false,
         })
+    }
+
+    /// Log HID output, write lengths, and matching input to stderr for diagnostics.
+    pub fn with_hid_trace(mut self, trace: bool) -> Self {
+        self.trace = trace;
+        self
     }
 
     /// Read the FPGA version over the same HID collection used by the iBasso web app.
     pub fn fpga_version(&self) -> Result<u8, Error> {
-        hid::query(&self.handle, &protocol::FPGA_QUERY, protocol::FPGA_COMMAND)
+        hid::query(
+            &self.handle,
+            &protocol::FPGA_QUERY,
+            protocol::FPGA_COMMAND,
+            self.trace,
+        )
     }
 
     pub fn volume(&self) -> Result<u8, Error> {
@@ -104,7 +134,14 @@ impl Device {
     ) -> Result<VolumeReading, Error> {
         change_volume(
             || self.volume_reading(),
-            |report| hid::write_volume(&self.handle, report),
+            |report| {
+                hid::write_report(
+                    &self.handle,
+                    report,
+                    "sending a volume output report",
+                    self.trace,
+                )
+            },
             Target::Down,
             progress,
             || true,
@@ -121,6 +158,29 @@ impl Device {
         self.change(Target::Step(target), active)
     }
 
+    /// Send both gain reports in order. Progress receives the command and DAC
+    /// address of each matching reply. Success only confirms those two replies.
+    pub fn set_gain(
+        &self,
+        level: GainLevel,
+        active: impl Fn() -> bool,
+        progress: impl FnMut(u8, u8),
+    ) -> Result<(), Error> {
+        send_gain(
+            |report| {
+                hid::write_report(
+                    &self.handle,
+                    report,
+                    "sending a gain output report",
+                    self.trace,
+                )
+            },
+            level,
+            active,
+            progress,
+        )
+    }
+
     /// Explicit CLI bench operation: 0 and 100 are not exposed by the tray.
     /// Only leave 0 after a fresh FF/FF reading. Never write from 00/00.
     pub fn bench_edge(&self, target: u8) -> Result<VolumeReading, Error> {
@@ -130,7 +190,14 @@ impl Device {
     fn change(&self, target: Target, active: impl Fn() -> bool) -> Result<VolumeReading, Error> {
         change_volume(
             || self.volume_reading(),
-            |report| hid::write_volume(&self.handle, report),
+            |report| {
+                hid::write_report(
+                    &self.handle,
+                    report,
+                    "sending a volume output report",
+                    self.trace,
+                )
+            },
             target,
             |_| {},
             active,
@@ -142,8 +209,35 @@ impl Device {
             &self.handle,
             &protocol::volume_query(register),
             protocol::VOLUME_COMMAND,
+            self.trace,
         )
     }
+}
+
+fn send_gain(
+    mut write: impl FnMut(&[u8; 17]) -> Result<(), Error>,
+    level: GainLevel,
+    active: impl Fn() -> bool,
+    mut progress: impl FnMut(u8, u8),
+) -> Result<(), Error> {
+    let mut previous_reply = None;
+    for report in &protocol::gain_writes(level) {
+        let (command, address) = (report[1], report[4]);
+        let result = if active() {
+            write(report)
+        } else {
+            Err(Error::SessionEnded)
+        };
+        result.map_err(|source| Error::GainWriteUnknown {
+            command,
+            address,
+            previous_reply,
+            source: Box::new(source),
+        })?;
+        progress(command, address);
+        previous_reply = Some((command, address));
+    }
+    Ok(())
 }
 
 fn change_volume(
@@ -233,6 +327,12 @@ pub enum Error {
         command: u8,
         source: Box<Error>,
     },
+    GainWriteUnknown {
+        command: u8,
+        address: u8,
+        previous_reply: Option<(u8, u8)>,
+        source: Box<Error>,
+    },
     ReadBackUnknown(Box<Error>),
     UnexpectedReadBack {
         expected: VolumeReading,
@@ -276,6 +376,25 @@ impl fmt::Display for Error {
                 formatter,
                 "{OUTCOME_UNKNOWN}. Volume command 0x{command:02X}: {source}"
             ),
+            Self::GainWriteUnknown {
+                command,
+                address,
+                previous_reply,
+                source,
+            } => {
+                write!(
+                    formatter,
+                    "Gain outcome unknown. Gain command 0x{command:02X} (DAC 0x{address:02X}) failed: {source}. "
+                )?;
+                if let Some((command, address)) = previous_reply {
+                    write!(
+                        formatter,
+                        "First report (command 0x{command:02X}, DAC 0x{address:02X}) received a matching reply."
+                    )
+                } else {
+                    formatter.write_str("Second report was skipped.")
+                }
+            }
             Self::ReadBackUnknown(source) => {
                 write!(
                     formatter,
@@ -296,6 +415,7 @@ impl StdError for Error {
             Self::Hid { source, .. } => Some(source),
             Self::ReadBeforeWrite(source)
             | Self::VolumeWriteUnknown { source, .. }
+            | Self::GainWriteUnknown { source, .. }
             | Self::ReadBackUnknown(source) => Some(source.as_ref()),
             _ => None,
         }
@@ -314,6 +434,101 @@ mod tests {
         reg_10: 0x5d,
         reg_11: 0x5d,
     };
+
+    #[test]
+    fn gain_timeout_on_first_report_skips_second_report() {
+        let mut sent = Vec::new();
+        let error = send_gain(
+            |report| {
+                sent.push(report[1]);
+                Err(Error::Timeout)
+            },
+            GainLevel::Low,
+            || true,
+            |_, _| panic!("unexpected reply"),
+        )
+        .unwrap_err();
+
+        assert_eq!(sent, [0x15]);
+        let message = error.to_string();
+        assert!(message.contains("Gain outcome unknown"));
+        assert!(message.contains("0x15 (DAC 0x60) failed: Timed out"));
+        assert!(message.contains("Second report was skipped"));
+    }
+
+    #[test]
+    fn gain_timeout_on_second_report_preserves_first_reply() {
+        let mut sent = Vec::new();
+        let mut replies = Vec::new();
+        let error = send_gain(
+            |report| {
+                sent.push(report[1]);
+                match report[1] {
+                    0x15 => Ok(()),
+                    0x16 => Err(Error::Timeout),
+                    _ => panic!("unexpected gain command"),
+                }
+            },
+            GainLevel::Mid,
+            || true,
+            |command, address| replies.push((command, address)),
+        )
+        .unwrap_err();
+
+        assert_eq!(sent, [0x15, 0x16]);
+        assert_eq!(replies, [(0x15, 0x60)]);
+        let message = error.to_string();
+        assert!(message.contains("Gain outcome unknown"));
+        assert!(message.contains("0x16 (DAC 0x62) failed: Timed out"));
+        assert!(
+            message.contains("First report (command 0x15, DAC 0x60) received a matching reply")
+        );
+    }
+
+    #[test]
+    fn gain_succeeds_after_both_replies() {
+        let mut sent = Vec::new();
+        let mut replies = Vec::new();
+        send_gain(
+            |report| {
+                sent.push(report[1]);
+                Ok(())
+            },
+            GainLevel::High,
+            || true,
+            |command, address| replies.push((command, address)),
+        )
+        .unwrap();
+
+        assert_eq!(sent, [0x15, 0x16]);
+        assert_eq!(replies, [(0x15, 0x60), (0x16, 0x62)]);
+    }
+
+    #[test]
+    fn gain_stops_if_session_ends_after_first_reply() {
+        let active = std::cell::Cell::new(true);
+        let mut sent = Vec::new();
+        let error = send_gain(
+            |report| {
+                sent.push(report[1]);
+                Ok(())
+            },
+            GainLevel::High,
+            || active.get(),
+            |_, _| active.set(false),
+        )
+        .unwrap_err();
+
+        assert_eq!(sent, [0x15]);
+        assert!(matches!(
+            error,
+            Error::GainWriteUnknown {
+                previous_reply: Some((0x15, 0x60)),
+                source,
+                ..
+            } if matches!(*source, Error::SessionEnded)
+        ));
+    }
 
     fn lower_one(
         read: impl FnMut() -> Result<VolumeReading, Error>,

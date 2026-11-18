@@ -1,7 +1,25 @@
 #include "app_version.h"
+#include <winres.h>
 
 1 ICON "tray.ico"
 1 24 "tray.manifest"
+
+// Control IDs are shared with src/win32/settings.rs.
+101 DIALOGEX 0, 0, 230, 100
+STYLE DS_SETFONT | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_TOOLWINDOW
+CAPTION "DAC Settings"
+FONT 9, "Segoe UI"
+BEGIN
+    LTEXT "Current gain: Unknown", -1, 10, 10, 210, 11
+    GROUPBOX "Gain Level", -1, 10, 25, 210, 33
+    PUSHBUTTON "Low", 1001, 18, 38, 60, 14, WS_DISABLED
+    PUSHBUTTON "Mid", 1002, 85, 38, 60, 14, WS_DISABLED
+    PUSHBUTTON "High", 1003, 152, 38, 60, 14, WS_DISABLED
+    LTEXT "", 1004, 10, 63, 210, 11
+    PUSHBUTTON "Error details", 1005, 10, 79, 65, 14
+    DEFPUSHBUTTON "Close", IDCANCEL, 160, 79, 60, 14
+END
 
 1 VERSIONINFO
 FILEVERSION APP_VERSION_NUMERIC

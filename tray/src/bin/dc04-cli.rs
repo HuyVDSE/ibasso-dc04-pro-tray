@@ -1,5 +1,5 @@
 use hidapi::HidApi;
-use ibasso_dc04_pro::dc04::{self, Device, VolumeDownEvent};
+use ibasso_dc04_pro::dc04::{self, Device, GainLevel, VolumeDownEvent};
 use std::{
     env,
     error::Error,
@@ -8,17 +8,19 @@ use std::{
     time::{Duration, Instant},
 };
 
-const USAGE: &str = "Usage: dc04-cli <list | get [--raw] | volume-down [--unplug-test] | volume-set <1..99> | bench-edge <0|1|100> | --version>\nbench-edge is for hardware tests only. Stop playback and unplug headphones first.";
+const USAGE: &str = "Usage: dc04-cli <list | get [--raw] | fpga | volume-down [--unplug-test] | volume-set <1..99> | set-gain <low|mid|high> | bench-edge <0|1|100> | --version>\nPrefix get, fpga, or set-gain with --trace to log HID reports to stderr.\nbench-edge is for hardware tests only. Stop playback and unplug headphones first.";
 
 enum Command {
     List,
     Get { raw: bool },
+    Fpga,
     VolumeDown { unplug_test: bool },
     VolumeSet(u8),
+    SetGain(GainLevel),
     BenchEdge(u8),
 }
 
-fn run(command: Command) -> Result<(), Box<dyn Error>> {
+fn run(command: Command, trace: bool) -> Result<(), Box<dyn Error>> {
     let api = HidApi::new()?;
     match command {
         Command::List => {
@@ -39,13 +41,33 @@ fn run(command: Command) -> Result<(), Box<dyn Error>> {
                 );
             }
         }
-        Command::Get { raw: false } => println!("{}", Device::open(&api)?.volume()?),
-        Command::Get { raw: true } => println!("{}", Device::open(&api)?.volume_reading()?),
+        Command::Get { raw } => {
+            let reading = Device::open(&api)?.with_hid_trace(trace).volume_reading()?;
+            if raw {
+                println!("{reading}");
+            } else {
+                println!("{}", reading.step());
+            }
+        }
+        Command::Fpga => println!(
+            "FPGA version byte: 0x{:02X}",
+            Device::open(&api)?.with_hid_trace(trace).fpga_version()?
+        ),
         Command::VolumeSet(step) => {
             println!(
                 "Verified: {}",
                 Device::open(&api)?.set_volume(step, || true)?
             );
+        }
+        Command::SetGain(level) => {
+            Device::open(&api)?.with_hid_trace(trace).set_gain(
+                level,
+                || true,
+                |command, address| {
+                    eprintln!("Received matching reply for gain command 0x{command:02X} (DAC 0x{address:02X}).");
+                },
+            )?;
+            println!("Sent gain level: {level}");
         }
         Command::BenchEdge(step) => {
             println!("Verified: {}", Device::open(&api)?.bench_edge(step)?);
@@ -79,7 +101,8 @@ fn run(command: Command) -> Result<(), Box<dyn Error>> {
 }
 
 fn main() -> ExitCode {
-    let mut args = env::args().skip(1);
+    let mut args = env::args().skip(1).peekable();
+    let trace = args.next_if(|arg| arg == "--trace").is_some();
     let command = match (args.next().as_deref(), args.next().as_deref(), args.next()) {
         (Some("-V" | "--version"), None, None) => {
             println!(concat!("dc04-cli ", env!("CARGO_PKG_VERSION")));
@@ -93,6 +116,7 @@ fn main() -> ExitCode {
         (Some("get"), option @ (None | Some("--raw")), None) => Command::Get {
             raw: option.is_some(),
         },
+        (Some("fpga"), None, None) => Command::Fpga,
         (Some("volume-down"), option @ (None | Some("--unplug-test")), None) => {
             Command::VolumeDown {
                 unplug_test: option.is_some(),
@@ -108,12 +132,24 @@ fn main() -> ExitCode {
         (Some("bench-edge"), Some(step @ ("0" | "1" | "100")), None) => {
             Command::BenchEdge(step.parse().unwrap())
         }
+        (Some("set-gain"), Some("low"), None) => Command::SetGain(GainLevel::Low),
+        (Some("set-gain"), Some("mid"), None) => Command::SetGain(GainLevel::Mid),
+        (Some("set-gain"), Some("high"), None) => Command::SetGain(GainLevel::High),
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::from(2);
         }
     };
-    match run(command) {
+    if trace
+        && !matches!(
+            command,
+            Command::Get { .. } | Command::Fpga | Command::SetGain(_)
+        )
+    {
+        eprintln!("{USAGE}");
+        return ExitCode::from(2);
+    }
+    match run(command, trace) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("{error}");

@@ -1,6 +1,6 @@
 # iBasso DC04 Pro Tray
 
-A Windows system tray app that reads and adjusts the hardware volume of the **iBasso DC04 Pro** USB DAC over USB HID. The app runs as a portable executable, `dc04-tray.exe`, and supports volume levels **1–99**.
+A portable Windows system tray app for the **iBasso DC04 Pro** USB DAC. It reads and adjusts hardware volume (**1–99**) and sends Low, Mid, or High gain settings over USB HID.
 
 Tested on **Windows 11 x64** with a **DC04 Pro running FPGA version 1.58**. See the [hardware and portable build test results](research/dc04pro-milestone-4.md).
 
@@ -8,7 +8,8 @@ Tested on **Windows 11 x64** with a **DC04 Pro running FPGA version 1.58**. See 
 
 1. Connect the DC04 Pro over USB and run `dc04-tray.exe` without administrator privileges.
 2. Left-click the headphones icon in the system tray to view or adjust the volume. If the icon is hidden, click the **^** arrow to show hidden icons.
-3. Right-click the icon to open the menu. Select **Start with Windows** to launch the app automatically when you sign in.
+3. Right-click the icon and choose **DAC Settings** to send a gain level. **Last sent** shows the most recent choice that received both HID replies. **Current gain** stays **Unknown** because gain readback is unavailable. See the [gain validation log](research/dc04pro-v0.2.0-gain-validation.md).
+4. Select **Start with Windows** from the menu to launch the app automatically when you sign in.
 
 If you move the executable after enabling startup, run it from its new location and select **Start with Windows (update path)**. If the DAC fails to connect, **DAC Error Details** shows the most recent error.
 

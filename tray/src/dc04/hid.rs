@@ -18,14 +18,28 @@ pub(super) fn is_control_collection(info: &DeviceInfo) -> bool {
     info.usage_page() == USAGE_PAGE && info.usage() == USAGE
 }
 
-pub(super) fn query(handle: &HidDevice, output: &[u8], command: u8) -> Result<u8, Error> {
-    exchange(handle, output, "sending a query output report", |input| {
-        protocol::response_byte(input, command)
-    })
+pub(super) fn query(
+    handle: &HidDevice,
+    output: &[u8],
+    command: u8,
+    trace: bool,
+) -> Result<u8, Error> {
+    exchange(
+        handle,
+        output,
+        "sending a query output report",
+        trace,
+        |input| protocol::response_byte(input, command),
+    )
 }
 
-pub(super) fn write_volume(handle: &HidDevice, output: &[u8; 17]) -> Result<(), Error> {
-    exchange(handle, output, "sending a volume output report", |input| {
+pub(super) fn write_report(
+    handle: &HidDevice,
+    output: &[u8; 17],
+    operation: &'static str,
+    trace: bool,
+) -> Result<(), Error> {
+    exchange(handle, output, operation, trace, |input| {
         protocol::matching_response(input, output[1]).map(|_| ())
     })
 }
@@ -34,12 +48,19 @@ fn exchange<T>(
     handle: &HidDevice,
     output: &[u8],
     write_operation: &'static str,
+    trace: bool,
     parse: impl Fn(&[u8]) -> Option<T>,
 ) -> Result<T, Error> {
+    if trace {
+        eprintln!("HID OUT ({} bytes): {output:02X?}", output.len());
+    }
     let written = handle.write(output).map_err(|source| Error::Hid {
         operation: write_operation,
         source,
     })?;
+    if trace {
+        eprintln!("HID write returned {written} bytes");
+    }
     if written < output.len() {
         return Err(Error::ShortWrite {
             expected: output.len(),
@@ -64,6 +85,9 @@ fn exchange<T>(
             return Err(Error::Timeout);
         }
         if let Some(value) = parse(&input[..size]) {
+            if trace {
+                eprintln!("HID IN matched ({size} bytes): {:02X?}", &input[..size]);
+            }
             return Ok(value);
         }
     }

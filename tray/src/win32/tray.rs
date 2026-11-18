@@ -20,6 +20,7 @@ const EXIT: usize = 2;
 const STARTUP: usize = 3;
 const REMOVE_OLD_STARTUP: usize = 4;
 const HID_ERROR: usize = 5;
+const DAC_SETTINGS: usize = 6;
 
 pub struct Tray {
     hwnd: HWND,
@@ -175,6 +176,7 @@ impl Tray {
             };
             let _ = AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, PCWSTR(version.as_ptr()));
             let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
+            let _ = AppendMenuW(menu, MF_STRING, DAC_SETTINGS, w!("DAC Settings"));
             let _ = AppendMenuW(menu, MF_STRING, RESCAN, w!("Rescan DAC"));
             if hid_error.is_some() {
                 let _ = AppendMenuW(menu, MF_STRING, HID_ERROR, w!("DAC Error Details"));
@@ -213,8 +215,11 @@ impl Tray {
             .0 as usize;
             let _ = DestroyMenu(menu);
             let _ = PostMessageW(Some(self.hwnd), WM_NULL, WPARAM(0), LPARAM(0));
-            let _ = Shell_NotifyIconW(NIM_SETFOCUS, &self.data());
+            if selected != DAC_SETTINGS {
+                let _ = Shell_NotifyIconW(NIM_SETFOCUS, &self.data());
+            }
             match selected {
+                DAC_SETTINGS => app.show_settings(),
                 RESCAN => app.rescan(),
                 HID_ERROR => {
                     if let Some(error) = hid_error {

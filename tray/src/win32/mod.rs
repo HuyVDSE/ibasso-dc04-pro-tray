@@ -1,9 +1,11 @@
 mod popup;
+mod settings;
 mod startup;
 mod tray;
 
 use crate::worker::Worker;
 use popup::Popup;
+use settings::Settings;
 use std::{cell::RefCell, mem::size_of, rc::Rc};
 use windows::{
     Win32::{
@@ -29,6 +31,7 @@ thread_local! {
 struct App {
     worker: Worker,
     popup: Popup,
+    settings: Settings,
     icon: tray::Tray,
     taskbar_created: u32,
     notification: HDEVNOTIFY,
@@ -89,6 +92,7 @@ pub fn run() -> windows::core::Result<()> {
             None,
         )?;
         let popup = Popup::new(hwnd, module)?;
+        let settings = Settings::new(module)?;
         let icon = tray::Tray::new(hwnd, module)?;
         let taskbar_created = RegisterWindowMessageW(w!("TaskbarCreated"));
         if taskbar_created == 0 {
@@ -114,6 +118,7 @@ pub fn run() -> windows::core::Result<()> {
         let app = Rc::new(App {
             worker,
             popup,
+            settings,
             icon,
             taskbar_created,
             notification,
@@ -127,6 +132,7 @@ pub fn run() -> windows::core::Result<()> {
             match GetMessageW(&mut message, None, 0, 0).0 {
                 -1 => break Err(windows::core::Error::from_thread()),
                 0 => break Ok(()),
+                _ if app.settings.handle_message(&message) => {}
                 _ => {
                     let _ = TranslateMessage(&message);
                     DispatchMessageW(&message);
@@ -158,17 +164,38 @@ impl App {
         let snapshot = self.worker.snapshot();
         self.popup.render(snapshot);
         self.icon.update(snapshot);
+        if self.settings.visible() {
+            self.settings.render(self.worker.gain_snapshot());
+        }
     }
 
     fn hide(&self) {
         self.popup.hide();
-        self.worker.visible(false);
+        self.update_worker_visibility();
     }
 
     fn show(&self, anchor: RECT) {
         self.popup.show(anchor);
-        self.worker.visible(self.popup.visible());
+        self.update_worker_visibility();
         self.render();
+    }
+
+    fn show_settings(&self) {
+        self.settings.render(self.worker.gain_snapshot());
+        if let Err(error) = self.settings.show() {
+            show_error(&format!("Could not open DAC Settings.\n{error}"));
+        }
+        self.update_worker_visibility();
+    }
+
+    fn hide_settings(&self) {
+        self.settings.hide();
+        self.update_worker_visibility();
+    }
+
+    fn update_worker_visibility(&self) {
+        self.worker
+            .visible(self.popup.visible() || self.settings.visible());
     }
 
     fn rescan(&self) {
