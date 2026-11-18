@@ -8,7 +8,7 @@ Tested on **Windows 11 x64** with a **DC04 Pro running FPGA version 1.58**. See 
 
 1. Connect the DC04 Pro over USB and run `dc04-tray.exe` without administrator privileges.
 2. Left-click the headphones icon in the system tray to view or adjust the volume. If the icon is hidden, click the **^** arrow to show hidden icons.
-3. Choose **Low**, **Mid**, or **High** under **Gain Level**, directly below the volume slider. The **DAC Settings** entry in the right-click menu opens the same popup. **Last sent** shows the most recent choice that received both HID replies. **Current gain** stays **Unknown** because gain readback is unavailable. See the [gain validation log](research/dc04pro-v0.2.0-gain-validation.md).
+3. Choose **Low**, **Mid**, or **High** under **Gain Level**, directly below the volume slider. The **DAC Settings** entry in the right-click menu opens the same popup. **Last sent**, next to **Gain Level**, shows the most recent choice that received both HID replies. The app cannot read the current gain from the DAC. See the [gain validation log](research/dc04pro-v0.2.0-gain-validation.md).
 4. Select **Start with Windows** from the menu to launch the app automatically when you sign in.
 
 If you move the executable after enabling startup, run it from its new location and select **Start with Windows (update path)**. If the DAC fails to connect, **DAC Error Details** shows the most recent error.

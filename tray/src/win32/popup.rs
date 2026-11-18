@@ -21,7 +21,7 @@ const TBM_GETPOS: u32 = WM_USER;
 const SS_RIGHT: WINDOW_STYLE = WINDOW_STYLE(0x0002);
 const SS_ENDELLIPSIS: WINDOW_STYLE = WINDOW_STYLE(0x4000);
 pub const WIDTH: i32 = 320;
-pub const HEIGHT: i32 = 224;
+pub const HEIGHT: i32 = 200;
 
 const BACKGROUND: COLORREF = rgb(36, 38, 42);
 const BORDER: COLORREF = rgb(70, 73, 81);
@@ -45,7 +45,6 @@ pub struct Popup {
     value: HWND,
     slider: HWND,
     gain_label: HWND,
-    gain_current: HWND,
     gain_status: HWND,
     gain_buttons: [HWND; 3],
     background: HBRUSH,
@@ -98,8 +97,7 @@ impl Popup {
                 WS_TABSTOP | WINDOW_STYLE(TBS_NOTICKS),
             )?,
             gain_label: child(w!("STATIC"), w!("Gain Level"), WINDOW_STYLE(0))?,
-            gain_current: child(w!("STATIC"), w!("Current gain: Unknown"), SS_RIGHT)?,
-            gain_status: child(w!("STATIC"), w!(""), SS_ENDELLIPSIS)?,
+            gain_status: child(w!("STATIC"), w!(""), SS_RIGHT | SS_ENDELLIPSIS)?,
             gain_buttons: [
                 gain_button(GAIN_LEVELS[0])?,
                 gain_button(GAIN_LEVELS[1])?,
@@ -267,12 +265,11 @@ impl Popup {
                 (self.volume, 17, 66, 205, 21, Some(fonts[2])),
                 (self.value, 225, 66, 78, 21, Some(fonts[0])),
                 (self.slider, 10, 90, 300, 24, None),
-                (self.gain_label, 17, 130, 112, 19, Some(fonts[2])),
-                (self.gain_current, 129, 132, 174, 17, Some(fonts[1])),
+                (self.gain_label, 17, 130, 87, 19, Some(fonts[2])),
+                (self.gain_status, 104, 132, 199, 17, Some(fonts[1])),
                 (self.gain_buttons[0], 17, 155, 92, 28, None),
                 (self.gain_buttons[1], 114, 155, 92, 28, None),
                 (self.gain_buttons[2], 211, 155, 92, 28, None),
-                (self.gain_status, 17, 194, 286, 17, Some(fonts[1])),
             ] {
                 if let Some(font) = font {
                     SendMessageW(child, WM_SETFONT, Some(WPARAM(font.0 as usize)), None);
@@ -302,7 +299,7 @@ impl Popup {
         unsafe {
             SetTextColor(
                 dc,
-                if [self.status, self.gain_current, self.gain_status].contains(&label) {
+                if label == self.status || label == self.gain_status {
                     SECONDARY
                 } else {
                     TEXT
