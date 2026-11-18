@@ -1,6 +1,6 @@
 use super::{App, app, point, wide};
-use crate::worker::{Snapshot, Status};
-use ibasso_dc04_pro::dc04::{MAX_TARGET, MIN_TARGET};
+use crate::worker::{GainSnapshot, Snapshot, Status};
+use ibasso_dc04_pro::dc04::{GainLevel, MAX_TARGET, MIN_TARGET};
 use std::cell::Cell;
 use windows::{
     Win32::{
@@ -21,7 +21,7 @@ const TBM_GETPOS: u32 = WM_USER;
 const SS_RIGHT: WINDOW_STYLE = WINDOW_STYLE(0x0002);
 const SS_ENDELLIPSIS: WINDOW_STYLE = WINDOW_STYLE(0x4000);
 pub const WIDTH: i32 = 320;
-pub const HEIGHT: i32 = 127;
+pub const HEIGHT: i32 = 224;
 
 const BACKGROUND: COLORREF = rgb(36, 38, 42);
 const BORDER: COLORREF = rgb(70, 73, 81);
@@ -32,6 +32,10 @@ const BLUE: COLORREF = rgb(119, 184, 255);
 const MUTED_BLUE: COLORREF = rgb(103, 127, 155);
 const TRACK: COLORREF = rgb(59, 59, 59);
 const TRACK_BORDER: COLORREF = rgb(133, 133, 133);
+const BUTTON: COLORREF = rgb(48, 53, 61);
+const BUTTON_PRESSED: COLORREF = rgb(64, 80, 98);
+const DISABLED_TEXT: COLORREF = rgb(145, 153, 165);
+const GAIN_LEVELS: [GainLevel; 3] = [GainLevel::Low, GainLevel::Mid, GainLevel::High];
 
 pub struct Popup {
     hwnd: HWND,
@@ -40,9 +44,15 @@ pub struct Popup {
     volume: HWND,
     value: HWND,
     slider: HWND,
+    gain_label: HWND,
+    gain_current: HWND,
+    gain_status: HWND,
+    gain_buttons: [HWND; 3],
     background: HBRUSH,
     fonts: Cell<[HFONT; 3]>,
     enabled_epoch: Cell<Option<u64>>,
+    gain_epoch: Cell<Option<u64>>,
+    gain_displayed: Cell<(&'static str, Option<GainLevel>)>,
     drag: Cell<Option<u64>>,
     key: Cell<Option<(usize, u64)>>,
     wheel_remainder: Cell<i32>,
@@ -67,6 +77,14 @@ impl Popup {
                 None,
             )
         };
+        let gain_button = |level| {
+            let label = wide(level_name(level));
+            child(
+                w!("BUTTON"),
+                PCWSTR(label.as_ptr()),
+                WS_TABSTOP | WS_DISABLED | WINDOW_STYLE(BS_OWNERDRAW as u32),
+            )
+        };
         let this = Self {
             hwnd,
             title: child(w!("STATIC"), w!("iBasso DC04 Pro"), WINDOW_STYLE(0))?,
@@ -79,9 +97,19 @@ impl Popup {
                 w!("DAC Volume"),
                 WS_TABSTOP | WINDOW_STYLE(TBS_NOTICKS),
             )?,
+            gain_label: child(w!("STATIC"), w!("Gain Level"), WINDOW_STYLE(0))?,
+            gain_current: child(w!("STATIC"), w!("Current gain: Unknown"), SS_RIGHT)?,
+            gain_status: child(w!("STATIC"), w!(""), SS_ENDELLIPSIS)?,
+            gain_buttons: [
+                gain_button(GAIN_LEVELS[0])?,
+                gain_button(GAIN_LEVELS[1])?,
+                gain_button(GAIN_LEVELS[2])?,
+            ],
             background: unsafe { CreateSolidBrush(BACKGROUND) },
             fonts: Cell::new([HFONT::default(); 3]),
             enabled_epoch: Cell::new(None),
+            gain_epoch: Cell::new(None),
+            gain_displayed: Cell::new(("", None)),
             drag: Cell::new(None),
             key: Cell::new(None),
             wheel_remainder: Cell::new(0),
@@ -161,10 +189,31 @@ impl Popup {
                 SWP_NOACTIVATE | SWP_SHOWWINDOW,
             );
             let _ = SetForegroundWindow(self.hwnd);
-            if self.enabled_epoch.get().is_some() {
-                let _ = SetFocus(Some(self.slider));
+            if let Ok(first) = GetNextDlgTabItem(self.hwnd, None, false) {
+                let _ = SetFocus(Some(first));
             }
         }
+    }
+
+    pub fn handle_message(&self, app: &App, message: &MSG) -> bool {
+        if message.message != WM_KEYDOWN
+            || !self.visible()
+            || (message.hwnd != self.hwnd && unsafe { !IsChild(self.hwnd, message.hwnd).as_bool() })
+        {
+            return false;
+        }
+        match VIRTUAL_KEY(message.wParam.0 as u16) {
+            VK_ESCAPE => app.hide(),
+            VK_TAB => unsafe {
+                let current = (message.hwnd != self.hwnd).then_some(message.hwnd);
+                let reverse = GetKeyState(VK_SHIFT.0.into()) < 0;
+                if let Ok(next) = GetNextDlgTabItem(self.hwnd, current, reverse) {
+                    let _ = SetFocus(Some(next));
+                }
+            },
+            _ => return false,
+        }
+        true
     }
 
     pub fn hide(&self) {
@@ -211,12 +260,19 @@ impl Popup {
                 label_font(12, FW_NORMAL, dpi),
                 label_font(14, FW_NORMAL, dpi),
             ];
+            let old_fonts = self.fonts.replace(fonts);
             for (child, x, y, width, height, font) in [
                 (self.title, 61, 17, 242, 19, Some(fonts[0])),
                 (self.status, 61, 36, 242, 17, Some(fonts[1])),
                 (self.volume, 17, 66, 205, 21, Some(fonts[2])),
                 (self.value, 225, 66, 78, 21, Some(fonts[0])),
                 (self.slider, 10, 90, 300, 24, None),
+                (self.gain_label, 17, 130, 112, 19, Some(fonts[2])),
+                (self.gain_current, 129, 132, 174, 17, Some(fonts[1])),
+                (self.gain_buttons[0], 17, 155, 92, 28, None),
+                (self.gain_buttons[1], 114, 155, 92, 28, None),
+                (self.gain_buttons[2], 211, 155, 92, 28, None),
+                (self.gain_status, 17, 194, 286, 17, Some(fonts[1])),
             ] {
                 if let Some(font) = font {
                     SendMessageW(child, WM_SETFONT, Some(WPARAM(font.0 as usize)), None);
@@ -230,7 +286,7 @@ impl Popup {
                     true,
                 );
             }
-            for font in self.fonts.replace(fonts) {
+            for font in old_fonts {
                 let _ = DeleteObject(HGDIOBJ(font.0));
             }
             let corner = px(24, dpi);
@@ -246,7 +302,7 @@ impl Popup {
         unsafe {
             SetTextColor(
                 dc,
-                if label == self.status {
+                if [self.status, self.gain_current, self.gain_status].contains(&label) {
                     SECONDARY
                 } else {
                     TEXT
@@ -279,8 +335,117 @@ impl Popup {
             canvas.round(p(36), p(34), p(41), p(41), p(4), BLUE);
             canvas.round(p(28), p(35), p(31), p(40), p(2), BADGE);
             canvas.round(p(37), p(35), p(40), p(40), p(2), BADGE);
+            canvas.round(p(17), p(118), p(303), p(118) + line, 0, BORDER);
             drop(canvas);
             let _ = EndPaint(self.hwnd, &paint);
+        }
+    }
+
+    pub unsafe fn draw_button(&self, lp: LPARAM) -> bool {
+        let Some(draw) = (unsafe { (lp.0 as *const DRAWITEMSTRUCT).as_ref() }) else {
+            return false;
+        };
+        let Some(index) = self
+            .gain_buttons
+            .iter()
+            .position(|&hwnd| hwnd == draw.hwndItem)
+        else {
+            return false;
+        };
+        let mut rect = draw.rcItem;
+        let dpi = unsafe { GetDpiForWindow(self.hwnd) }.max(96);
+        let line = px(1, dpi);
+        let state = draw.itemState.0;
+        let focused = state & ODS_FOCUS.0 != 0;
+        let pressed = state & ODS_SELECTED.0 != 0;
+        let disabled = state & ODS_DISABLED.0 != 0;
+        let canvas = Shapes::new(draw.hDC);
+        canvas.round(rect.left, rect.top, rect.right, rect.bottom, 0, BACKGROUND);
+        canvas.round(
+            rect.left,
+            rect.top,
+            rect.right,
+            rect.bottom,
+            px(8, dpi),
+            if focused { BLUE } else { BORDER },
+        );
+        canvas.round(
+            rect.left + line,
+            rect.top + line,
+            rect.right - line,
+            rect.bottom - line,
+            px(6, dpi),
+            if pressed { BUTTON_PRESSED } else { BUTTON },
+        );
+        let mut label = wide(level_name(GAIN_LEVELS[index]));
+        unsafe {
+            let font = SelectObject(draw.hDC, HGDIOBJ(self.fonts.get()[2].0));
+            let color = SetTextColor(draw.hDC, if disabled { DISABLED_TEXT } else { TEXT });
+            let mode = SetBkMode(draw.hDC, TRANSPARENT);
+            DrawTextW(
+                draw.hDC,
+                &mut label,
+                &mut rect,
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+            );
+            SetBkMode(draw.hDC, BACKGROUND_MODE(mode as u32));
+            SetTextColor(draw.hDC, color);
+            SelectObject(draw.hDC, font);
+        }
+        true
+    }
+
+    pub fn render_gain(&self, snapshot: GainSnapshot) {
+        let epoch = snapshot.can_set_gain().then_some(snapshot.epoch);
+        if self.gain_epoch.replace(epoch).is_some() != epoch.is_some() {
+            for button in self.gain_buttons {
+                unsafe {
+                    let _ = EnableWindow(button, epoch.is_some());
+                }
+            }
+        }
+        let status = match (snapshot.requested, snapshot.last_sent, snapshot.status) {
+            (Some(level), _, _) => ("Sending ", Some(level)),
+            (_, Some(level), Status::Read(_)) => ("Last sent: ", Some(level)),
+            (_, _, Status::Offline) if snapshot.error.is_some() => {
+                ("Gain write failed · DAC disconnected", None)
+            }
+            (_, _, Status::Read(_)) if snapshot.error.is_some() => {
+                ("Gain write failed · Ready to retry", None)
+            }
+            (_, _, _) if snapshot.error.is_some() => ("Gain write failed · Waiting for DAC", None),
+            _ => ("Last sent: —", None),
+        };
+        if self.gain_displayed.replace(status) != status {
+            let (prefix, level) = status;
+            let label = match level {
+                Some(level) => {
+                    let suffix = if snapshot.requested.is_some() {
+                        "…"
+                    } else {
+                        ""
+                    };
+                    wide(&format!("{prefix}{}{suffix}", level_name(level)))
+                }
+                None => wide(prefix),
+            };
+            unsafe {
+                let _ = SetWindowTextW(self.gain_status, PCWSTR(label.as_ptr()));
+            }
+        }
+    }
+
+    pub fn command(&self, app: &App, wp: WPARAM, lp: LPARAM) {
+        if (wp.0 >> 16) as u16 == BN_CLICKED as u16
+            && self.visible()
+            && let Some(epoch) = self.gain_epoch.get()
+            && let Some(index) = self
+                .gain_buttons
+                .iter()
+                .position(|&button| button.0 as isize == lp.0)
+        {
+            app.worker.submit_gain(epoch, GAIN_LEVELS[index]);
+            self.render_gain(app.worker.gain_snapshot());
         }
     }
 
@@ -474,6 +639,14 @@ const fn rgb(r: u32, g: u32, b: u32) -> COLORREF {
     COLORREF(r | (g << 8) | (b << 16))
 }
 
+fn level_name(level: GainLevel) -> &'static str {
+    match level {
+        GainLevel::Low => "Low",
+        GainLevel::Mid => "Mid",
+        GainLevel::High => "High",
+    }
+}
+
 fn label_font(size: i32, weight: FONT_WEIGHT, dpi: u32) -> HFONT {
     unsafe {
         CreateFontW(
@@ -569,10 +742,6 @@ unsafe extern "system" fn slider_proc(
             }
             WM_KEYDOWN => {
                 let key = VIRTUAL_KEY(wp.0 as u16);
-                if key == VK_ESCAPE {
-                    app.hide();
-                    return LRESULT(0);
-                }
                 let delta = match key {
                     VK_LEFT | VK_DOWN => -1,
                     VK_RIGHT | VK_UP => 1,

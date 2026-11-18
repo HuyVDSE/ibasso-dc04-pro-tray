@@ -1,11 +1,9 @@
 mod popup;
-mod settings;
 mod startup;
 mod tray;
 
 use crate::worker::Worker;
 use popup::Popup;
-use settings::Settings;
 use std::{cell::RefCell, mem::size_of, rc::Rc};
 use windows::{
     Win32::{
@@ -31,7 +29,6 @@ thread_local! {
 struct App {
     worker: Worker,
     popup: Popup,
-    settings: Settings,
     icon: tray::Tray,
     taskbar_created: u32,
     notification: HDEVNOTIFY,
@@ -92,7 +89,6 @@ pub fn run() -> windows::core::Result<()> {
             None,
         )?;
         let popup = Popup::new(hwnd, module)?;
-        let settings = Settings::new(module)?;
         let icon = tray::Tray::new(hwnd, module)?;
         let taskbar_created = RegisterWindowMessageW(w!("TaskbarCreated"));
         if taskbar_created == 0 {
@@ -118,7 +114,6 @@ pub fn run() -> windows::core::Result<()> {
         let app = Rc::new(App {
             worker,
             popup,
-            settings,
             icon,
             taskbar_created,
             notification,
@@ -132,7 +127,7 @@ pub fn run() -> windows::core::Result<()> {
             match GetMessageW(&mut message, None, 0, 0).0 {
                 -1 => break Err(windows::core::Error::from_thread()),
                 0 => break Ok(()),
-                _ if app.settings.handle_message(&message) => {}
+                _ if app.popup.handle_message(&app, &message) => {}
                 _ => {
                     let _ = TranslateMessage(&message);
                     DispatchMessageW(&message);
@@ -163,39 +158,19 @@ impl App {
     fn render(&self) {
         let snapshot = self.worker.snapshot();
         self.popup.render(snapshot);
+        self.popup.render_gain(self.worker.gain_snapshot());
         self.icon.update(snapshot);
-        if self.settings.visible() {
-            self.settings.render(self.worker.gain_snapshot());
-        }
     }
 
     fn hide(&self) {
         self.popup.hide();
-        self.update_worker_visibility();
+        self.worker.visible(false);
     }
 
     fn show(&self, anchor: RECT) {
         self.popup.show(anchor);
-        self.update_worker_visibility();
+        self.worker.visible(self.popup.visible());
         self.render();
-    }
-
-    fn show_settings(&self) {
-        self.settings.render(self.worker.gain_snapshot());
-        if let Err(error) = self.settings.show() {
-            show_error(&format!("Could not open DAC Settings.\n{error}"));
-        }
-        self.update_worker_visibility();
-    }
-
-    fn hide_settings(&self) {
-        self.settings.hide();
-        self.update_worker_visibility();
-    }
-
-    fn update_worker_visibility(&self) {
-        self.worker
-            .visible(self.popup.visible() || self.settings.visible());
     }
 
     fn rescan(&self) {
@@ -258,17 +233,13 @@ unsafe extern "system" fn window_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPAR
                 return LRESULT(1);
             }
             WM_ACTIVATE if wp.0 as u16 == WA_INACTIVE as u16 => app.hide(),
-            WM_KEYDOWN
-                if wp.0
-                    == usize::from(windows::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE.0) =>
-            {
-                app.hide()
-            }
+            WM_COMMAND => app.popup.command(&app, wp, lp),
             WM_MOUSEWHEEL => app.popup.wheel(&app, wp, lp),
             WM_HSCROLL if lp.0 == app.popup.slider().0 as isize => app.popup.drag_update(&app),
             WM_PAINT => app.popup.paint(),
             WM_ERASEBKGND => return LRESULT(1),
             WM_CTLCOLORSTATIC => return app.popup.label_color(HDC(wp.0 as _), HWND(lp.0 as _)),
+            WM_DRAWITEM if unsafe { app.popup.draw_button(lp) } => return LRESULT(1),
             WM_NOTIFY => {
                 if let Some(result) = unsafe { app.popup.custom_draw(lp) } {
                     return result;

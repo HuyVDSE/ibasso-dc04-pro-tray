@@ -11,7 +11,7 @@ Mốc xuất phát là v0.1.2. App đã có popup chỉnh volume phần cứng t
 
 ## v0.2.0–v0.6.0 · Cài đặt DAC như bản web
 
-Thêm mục **DAC Settings** vào menu tray. Giữ thao tác bấm trái để chỉnh volume nhanh. Phạm vi của cửa sổ cài đặt dựa trên giao diện web DC04 PRO trong ảnh người dùng cung cấp.
+Đặt các điều khiển DAC ngay dưới thanh volume trong popup mở bằng chuột trái. Mục **DAC Settings** trong menu chuột phải mở cùng popup. Phạm vi điều khiển dựa trên giao diện web DC04 PRO trong ảnh người dùng cung cấp.
 
 | Bản dự kiến | Điều khiển | Các lựa chọn trên web |
 | --- | --- | --- |

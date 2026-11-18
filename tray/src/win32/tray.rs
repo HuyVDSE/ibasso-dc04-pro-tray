@@ -168,7 +168,10 @@ impl Tray {
         let anchor = self.anchor(cursor);
         let startup = startup::Startup::current_exe()
             .and_then(|setting| setting.state().map(|state| (setting, state)));
-        let hid_error = app.worker.last_error();
+        let hid_error = app
+            .worker
+            .last_error()
+            .or_else(|| app.worker.gain_snapshot().error);
         let version = wide(concat!("iBasso DC04 Pro Tray v", env!("CARGO_PKG_VERSION")));
         unsafe {
             let Ok(menu) = CreatePopupMenu() else {
@@ -219,7 +222,7 @@ impl Tray {
                 let _ = Shell_NotifyIconW(NIM_SETFOCUS, &self.data());
             }
             match selected {
-                DAC_SETTINGS => app.show_settings(),
+                DAC_SETTINGS => app.show(anchor),
                 RESCAN => app.rescan(),
                 HID_ERROR => {
                     if let Some(error) = hid_error {
